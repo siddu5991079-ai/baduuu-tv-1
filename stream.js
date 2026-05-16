@@ -6,29 +6,28 @@ const fs = require('fs');
 const { spawn, execSync } = require('child_process');
 const { PuppeteerScreenRecorder } = require('puppeteer-screen-recorder');
 
-
 // 🚀 Multi-Stream Key Manager
 const STREAM_KEYS = {
-    '1'    : '15254238731883_15281627925099_najspfkgne', 
+    '1'   : '15254238731883_15281627925099_najspfkgne', 
     '1.1' : '15254260751979_15281671637611_2plrcfqzze', 
     '1.2' : '15254285524587_15281717840491_7e6qdknzsu',
     
-    '2'    : '15254299352683_15281743071851_7dvz3h5d7q',
+    '2'   : '15254299352683_15281743071851_7dvz3h5d7q',
     '2.1' : '15254308986475_15281761618539_3xca7oij3u',
     '2.2' : '15254328122987_15281795566187_zjqa6bqzoq', 
 
-    '3'    : '15254341885547_15281821059691_hhlpb5vicy', 
+    '3'   : '15254341885547_15281821059691_hhlpb5vicy', 
     '3.1' : '15254357089899_15281848322667_sxeexgvzl4', 
     '3.2' : '15254367510123_15281868180075_pc4jrytfgm',
 
-    '4'    : '15255022345835_15283095800427_vwrupxzstm', 
+    '4'   : '15255022345835_15283095800427_vwrupxzstm', 
     '4.1' : '15255038074475_15283122080363_ai5qqp2we4', 
     '4.2' : '15255045480043_15283135842923_tldl4bhmii',
     '4.3' : '15255208599147_15283449629291_abltofuc7m', 
     '4.4' : '15255217708651_15283466603115_bojrrqtlmu', 
     '4.5' : '15255227670123_15283486263915_jpntt54mve',
 
-    '5'    : '15273689226859_15317451606635_d7zzy3c7qi', 
+    '5'   : '15273689226859_15317451606635_d7zzy3c7qi', 
     '5.1' : '15273713933931_15317494860395_avj47smmim', 
     '5.2' : '15273722257003_15317510195819_6edjluvdqi',
     '5.3' : '15273739624043_15317541653099_ii4bxpvabe',
@@ -66,15 +65,6 @@ async function takeAndBatchScreenshot(page, stepName) {
         pendingScreenshots.push(filePath);
 
         if (pendingScreenshots.length >= 3) {
-            // 👉 DEBUGGING UPDATE: Upload cycle limit logic commented out for 24/7 logging
-            /*
-            if (uploadCycleCount >= 4) {
-                console.log(`[!] Upload cycle limit (4) reached. Skipping GitHub Release upload.`);
-                pendingScreenshots = [];
-                return;
-            }
-            */
-
             console.log(`[🚀] 3 Screenshots collected. Triggering LIVE batch upload to GitHub Releases...`);
             try {
                 const tag = 'live-stream-logs';
@@ -208,7 +198,239 @@ async function startDirectStreaming() {
         console.log(`[*] =====================================\n`);
     }
 
-    console.log('[*http://googleusercontent.com/image_generation_content/0
+    console.log('[*] Hunting for the Play Button (Supporting both JW Player and Plyr)...');
+    let buttonGone = false;
+    let attempts = 0;
+    
+    while (!buttonGone && attempts < 15) {
+        buttonGone = true;
+        for (const frame of page.frames()) {
+            try {
+                const playBtn = await frame.$('.jw-icon-display[aria-label="Play"], button[data-plyr="play"]');
+                if (playBtn) {
+                    const isVisible = await frame.evaluate(el => {
+                        const style = window.getComputedStyle(el);
+                        return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+                    }, playBtn);
+
+                    if (isVisible) {
+                        buttonGone = false;
+                        console.log(`[*] Play button detected! Smashing it... (Attempt ${attempts + 1}/15)`);
+                        await frame.evaluate(el => el.click(), playBtn); 
+                        await takeAndBatchScreenshot(page, `play-btn-clicked`);
+                        await new Promise(r => setTimeout(r, 2000));
+                        break; 
+                    }
+                }
+            } catch (err) {}
+        }
+        attempts++;
+        if (!buttonGone) await new Promise(r => setTimeout(r, 1000));
+    }
+
+    console.log('[*] Scanning iframes for the REAL Live Stream Video...');
+    let targetFrame = null;
+    for (const frame of page.frames()) {
+        try {
+            const isRealLiveStream = await frame.evaluate(() => {
+                const vid = document.querySelector('video');
+                if (!vid) return false;
+                if (vid.clientWidth < 100 || vid.clientHeight < 100) return false; 
+                return true; 
+            });
+
+            if (isRealLiveStream) {
+                targetFrame = frame;
+                console.log(`[+] Smart Scanner locked onto video frame: ${frame.url().substring(0, 50)}...`);
+                break;
+            }
+        } catch (e) { }
+    }
+
+    if (!targetFrame) {
+        console.log('[-] Smart Scanner could not find an iframe with video, defaulting to main page.');
+        targetFrame = page.mainFrame();
+    }
+    await takeAndBatchScreenshot(page, 'video-located');
+
+    console.log('[*] Enforcing Black Background and Full Screen UI...');
+    await page.evaluate(() => {
+        document.body.style.backgroundColor = 'black';
+        document.body.style.overflow = 'hidden';
+        document.querySelectorAll('iframe').forEach(iframe => {
+            iframe.style.position = 'fixed'; iframe.style.top = '0'; iframe.style.left = '0';
+            iframe.style.width = '100vw'; iframe.style.height = '100vh';
+            iframe.style.zIndex = '999999'; iframe.style.backgroundColor = 'black'; iframe.style.border = 'none';
+        });
+    }).catch(() => {});
+
+    await targetFrame.evaluate(async () => {
+        const style = document.createElement('style');
+        style.innerHTML = `.jw-controls, .jw-ui, .plyr__controls, .vjs-control-bar, [data-player] .controls { display: none !important; }`;
+        document.head.appendChild(style);
+
+        const video = document.querySelector('video');
+        if (video) { 
+            video.muted = false; video.volume = 1.0; 
+            video.style.position = 'fixed'; video.style.top = '0'; video.style.left = '0';
+            video.style.width = '100vw'; video.style.height = '100vh';
+            video.style.zIndex = '2147483647'; video.style.backgroundColor = 'black'; video.style.objectFit = 'contain';
+        }
+    }).catch(()=>{});
+
+    console.log(`[+] Broadcasting to OK.ru CHANNEL: ${SELECTED_CHANNEL} - Quality: ${streamQuality}`);
+    
+    let vfScale, bv, maxrate, bufsize, ba;
+
+    if (streamQuality.includes('50KBps')) {
+        vfScale = 'scale=640:360';
+        bv = '350k'; maxrate = '400k'; bufsize = '800k'; ba = '32k';
+    } else if (streamQuality.includes('30KBps')) {
+        vfScale = 'scale=426:240';
+        bv = '200k'; maxrate = '220k'; bufsize = '440k'; ba = '32k';
+    } else {
+        vfScale = 'scale=854:480';
+        bv = '800k'; maxrate = '850k'; bufsize = '1700k'; ba = '64k';
+    }
+
+    const displayNum = process.env.DISPLAY || ':99';
+    let ffmpegArgs = [
+        '-y', 
+        '-use_wallclock_as_timestamps', '1', '-thread_queue_size', '1024',
+        '-f', 'x11grab', '-draw_mouse', '0', '-video_size', '1280x720', '-framerate', '30',
+        '-i', displayNum, 
+        
+        '-itsoffset', '1.4', 
+        
+        '-use_wallclock_as_timestamps', '1', '-thread_queue_size', '1024',
+        '-f', 'pulse', '-i', 'default',
+        
+        '-vf', vfScale, '-c:v', 'libx264', '-preset', 'veryfast', '-profile:v', 'main',
+        '-b:v', bv, '-maxrate', maxrate, '-bufsize', bufsize,
+        '-pix_fmt', 'yuv420p', '-g', '60', '-c:a', 'aac', '-b:a', ba, '-ac', '2', '-ar', '44100',
+        
+        '-af', 'aresample=async=1000', 
+        
+        '-f', 'flv', RTMP_DESTINATION 
+    ];
+    
+    ffmpegProcess = spawn('ffmpeg', ffmpegArgs);
+    ffmpegProcess.stderr.on('data', (data) => {
+        if (data.toString().includes('Error')) console.log(`[FFmpeg Error]: ${data}`);
+    });
+
+    console.log('[*] Capturing stream for 30 seconds to finalize Debug Recording...');
+    await new Promise(r => setTimeout(r, 30000));
+    await recorder.stop();
+    console.log('[+] 30-Sec Debug Video Saved! Safe to cancel workflow anytime now.');
+    await takeAndBatchScreenshot(page, 'recording-finished');
+
+    console.log('\n[*] Smart Engine Connected! 24/7 Monitoring Active...');
+    let watchdogTicks = 0;
+    while (true) {
+        if (!browser || !browser.isConnected()) throw new Error("Browser closed.");
+
+        let overallStatus = 'DEAD';
+        let currentVideoTime = -1; 
+        let criticalErrorFound = false;
+
+        for (const frame of page.frames()) {
+            try {
+                const result = await frame.evaluate(() => {
+                    const bodyText = document.body.innerText.toLowerCase();
+                    if (bodyText.includes("stream error") || bodyText.includes("could not be loaded")) return { status: 'CRITICAL_ERROR' };
+                    
+                    const v = document.querySelector('video');
+                    if (v && !v.ended) {
+                        return { status: 'HEALTHY', currentTime: v.currentTime };
+                    }
+                    return { status: 'DEAD' };
+                });
+
+                if (result.status === 'CRITICAL_ERROR') criticalErrorFound = true;
+                if (result.status === 'HEALTHY') {
+                    overallStatus = 'HEALTHY';
+                    currentVideoTime = result.currentTime; 
+                }
+            } catch (e) {}
+        }
+
+        // Frozen frame detection logic
+        if (overallStatus === 'HEALTHY' && currentVideoTime !== -1) {
+            const now = Date.now();
+            if (currentVideoTime === lastVideoTime) {
+                const timeFrozen = now - frozenCheckTimestamp;
+                if (timeFrozen > FROZEN_THRESHOLD_MS) {
+                    console.log(`[!] Frozen frame detected! Video time stuck at ${currentVideoTime}s for ${timeFrozen/1000}s.`);
+                    overallStatus = 'FROZEN';
+                }
+            } else {
+                lastVideoTime = currentVideoTime;
+                frozenCheckTimestamp = now;
+            }
+        }
+
+        if (criticalErrorFound || overallStatus === 'DEAD' || overallStatus === 'FROZEN') {
+            const reason = overallStatus === 'FROZEN' ? "video frozen" : "video dead/error";
+            console.log(`\n[!] ❌ STREAM DEAD/FROZEN DETECTED (${reason})! Restarting process...`);
+            await takeAndBatchScreenshot(page, 'stream-dead-detected');
+            throw new Error(`Watchdog detected ${reason}.`); 
+        }
+
+        watchdogTicks++;
+        // 120 ticks * 5s = 600s = 10 mins.
+        if (watchdogTicks % 120 === 0) {
+            console.log(`[🚀] 10-Minute Heartbeat: Taking status screenshot...`);
+            await takeAndBatchScreenshot(page, `heartbeat-tick-${watchdogTicks}`);
+        }
+
+        await new Promise(r => setTimeout(r, 5000)); 
+    }
+}
+
+async function cleanup() {
+    if (ffmpegProcess) { try { ffmpegProcess.kill('SIGKILL'); } catch(e){} ffmpegProcess = null; }
+    if (browser) { try { await browser.close(); } catch(e){} browser = null; }
+}
+
+process.on('SIGINT', async () => {
+    console.log('\n[*] Stopping live script cleanly...');
+    await cleanup();
+    process.exit(0);
+});
+
+// =========================================================================
+// ⏱️ AUTO-OVERLAP TRIGGER
+// =========================================================================
+setTimeout(() => {
+    console.log("\n[*] 5h 50m completed! Triggering next action for seamless overlap...");
+    try {
+        const { execSync } = require('child_process');
+        
+        const targetUrl = process.env.TARGET_URL || 'https://dadocric.st/player.php?id=starsp3&v=m';
+        const channel = process.env.OKRU_STREAM_ID || '1';
+        const quality = process.env.STREAM_QUALITY || '110KBps (Balanced 480p)';
+        const server = process.env.SERVER_SELECTION || 'None';
+
+        const cmd = `gh workflow run main.yml -f target_url="${targetUrl}" -f okru_stream_channel="${channel}" -f stream_quality="${quality}" -f server_selection="${server}"`;
+        
+        console.log(`[*] Executing Command: ${cmd}`);
+        execSync(cmd, { stdio: 'inherit' });
+        
+        console.log("[+] Next workflow run successfully triggered!");
+
+        setTimeout(async () => {
+            console.log("\n[*] Handing over stream to next action. Shutting down cleanly...");
+            await cleanup();
+            process.exit(0);
+        }, 300000); 
+
+    } catch (err) {
+        console.error("[-] Failed to trigger next workflow using GH CLI:", err.message);
+    }
+}, 21000000);
+
+mainLoop();
 
 
 
