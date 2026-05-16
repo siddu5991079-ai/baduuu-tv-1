@@ -296,23 +296,51 @@ async function startDirectStreaming() {
     const displayNum = process.env.DISPLAY || ':99';
     let ffmpegArgs = [
         '-y', 
-        '-use_wallclock_as_timestamps', '1', '-thread_queue_size', '1024',
+        
+        // Video Input (Screen)
+        '-thread_queue_size', '5120', // Buffer barha diya taake frame drop na ho
         '-f', 'x11grab', '-draw_mouse', '0', '-video_size', '1280x720', '-framerate', '30',
         '-i', displayNum, 
         
-        '-itsoffset', '1.4', 
-        
-        '-use_wallclock_as_timestamps', '1', '-thread_queue_size', '1024',
+        // Audio Input (Pulse)
+        '-thread_queue_size', '5120', // Audio ka buffer bhi barha diya
         '-f', 'pulse', '-i', 'default',
         
-        '-vf', vfScale, '-c:v', 'libx264', '-preset', 'veryfast', '-profile:v', 'main',
-        '-b:v', bv, '-maxrate', maxrate, '-bufsize', bufsize,
-        '-pix_fmt', 'yuv420p', '-g', '60', '-c:a', 'aac', '-b:a', ba, '-ac', '2', '-ar', '44100',
+        // 👉 A/V Sync Fix: Hardcoded -itsoffset hata diya gaya hai.
+        // Ab dono streams ko combine karke async resample kiya jayega
+        '-filter_complex', '[0:v]setpts=PTS-STARTPTS[v];[1:a]asetpts=PTS-STARTPTS,aresample=async=1[a]',
+        '-map', '[v]', '-map', '[a]',
         
-        '-af', 'aresample=async=1000', 
+        // Encoding Settings
+        '-c:v', 'libx264', '-preset', 'veryfast', '-profile:v', 'main',
+        '-b:v', bv, '-maxrate', maxrate, '-bufsize', bufsize,
+        '-pix_fmt', 'yuv420p', '-g', '60', 
+        '-c:a', 'aac', '-b:a', ba, '-ac', '2', '-ar', '44100',
         
         '-f', 'flv', RTMP_DESTINATION 
     ];
+    
+
+    // const displayNum = process.env.DISPLAY || ':99';
+    // let ffmpegArgs = [
+    //     '-y', 
+    //     '-use_wallclock_as_timestamps', '1', '-thread_queue_size', '1024',
+    //     '-f', 'x11grab', '-draw_mouse', '0', '-video_size', '1280x720', '-framerate', '30',
+    //     '-i', displayNum, 
+        
+    //     '-itsoffset', '1.4', 
+        
+    //     '-use_wallclock_as_timestamps', '1', '-thread_queue_size', '1024',
+    //     '-f', 'pulse', '-i', 'default',
+        
+    //     '-vf', vfScale, '-c:v', 'libx264', '-preset', 'veryfast', '-profile:v', 'main',
+    //     '-b:v', bv, '-maxrate', maxrate, '-bufsize', bufsize,
+    //     '-pix_fmt', 'yuv420p', '-g', '60', '-c:a', 'aac', '-b:a', ba, '-ac', '2', '-ar', '44100',
+        
+    //     '-af', 'aresample=async=1000', 
+        
+    //     '-f', 'flv', RTMP_DESTINATION 
+    // ];
     
     ffmpegProcess = spawn('ffmpeg', ffmpegArgs);
     ffmpegProcess.stderr.on('data', (data) => {
