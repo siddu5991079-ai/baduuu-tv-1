@@ -48,6 +48,14 @@ jobs:
             QUALITY=$(echo "$QUALITY" | tr -d '\r')
             SERVER=$(echo "$SERVER" | tr -d '\r')
 
+            # 👉 YAHAN COMMENT WALA LOGIC ADD KIYA GAYA HAI 👈
+            # Agar line '#' se shuru ho rahi hai toh usay skip karo aur wapas save kar do
+            if [[ "$URL" == \#* ]]; then 
+              echo "[ℹ️] Skipping commented line: $URL"
+              echo "$URL,$CHANNEL,$QUALITY,$SERVER" >> temp.csv
+              continue
+            fi
+
             echo "[*] Starting Channel: $CHANNEL for URL: $URL"
             
             # main.yml ko trigger karte hain variables ke sath
@@ -63,7 +71,7 @@ jobs:
             fi
           done
           
-          # Purani CSV ko nayi (deleted wali) file se replace kar dein
+          # Purani CSV ko nayi (deleted/commented wali) file se replace kar dein
           mv temp.csv "$CSV_FILE"
 
       - name: Commit and Push Updated CSV
