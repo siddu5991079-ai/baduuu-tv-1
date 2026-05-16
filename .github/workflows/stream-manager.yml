@@ -1,0 +1,79 @@
+name: 🛠️ Stream Manager (Cancel & Cleanup)
+
+on:
+  workflow_dispatch:
+    inputs:
+      cancel_channels:
+        description: 'Channels to Cancel (comma-separated, e.g., 1, 1.1) - Khali chhor dein agar koi cancel nahi karna'
+        required: false
+        type: string
+      delete_junk:
+        description: 'Kya fazool (stopped/failed/cancelled) actions ko delete karna hai?'
+        required: true
+        type: choice
+        options: ['No', 'Yes']
+        default: 'No'
+
+permissions:
+  actions: write # Workflows ko cancel aur delete karne ke liye zaroori hai
+
+jobs:
+  manage-streams:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Cancel Specific Channels
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          CHANNELS="${{ inputs.cancel_channels }}"
+          if [ -n "$CHANNELS" ]; then
+            echo "[*] Processing cancel requests for channels: $CHANNELS"
+            
+            # Comma ke hisaab se input ko alag alag karna
+            IFS=',' read -ra CH_ARRAY <<< "$CHANNELS"
+            for CH in "${CH_ARRAY[@]}"; do
+              # Extra spaces ko remove karna
+              CH=$(echo "$CH" | xargs)
+              
+              if [ -n "$CH" ]; then
+                echo "[*] Searching for active 'Stream Bot - Channel $CH'..."
+                
+                # Running streams dhoondna aur unki ID nikalna
+                RUN_IDS=$(gh run list --workflow "main.yml" --status in_progress --json name,databaseId | jq -r ".[] | select(.name == \"Stream Bot - Channel $CH\") | .databaseId")
+                
+                if [ -z "$RUN_IDS" ]; then
+                  echo "[-] Koi active stream nahi mili Channel $CH ke liye."
+                else
+                  for ID in $RUN_IDS; do
+                    echo "[+] Cancelling Workflow ID: $ID (Channel $CH)"
+                    gh run cancel $ID
+                  done
+                fi
+              fi
+            done
+          else
+            echo "[*] Koi specific channel input nahi diya gaya cancel karne ke liye."
+          fi
+
+      - name: Clean Up Junk History
+        if: ${{ inputs.delete_junk == 'Yes' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "[*] Searching for stopped/failed/cancelled runs to delete..."
+          
+          # Un streams ki IDs nikalna jo ab 'in_progress' nahi hain (limit 100 at a time)
+          JUNK_IDS=$(gh run list --workflow "main.yml" --limit 100 --json status,databaseId | jq -r '.[] | select(.status != "in_progress") | .databaseId')
+          
+          if [ -z "$JUNK_IDS" ]; then
+            echo "[-] Koi junk/fazool runs nahi milay delete karne ke liye."
+          else
+            for ID in $JUNK_IDS; do
+              echo "[+] Deleting Junk Workflow ID: $ID"
+              gh run delete $ID
+            done
+            echo "[+] Safai complete ho gayi!"
+          fi
