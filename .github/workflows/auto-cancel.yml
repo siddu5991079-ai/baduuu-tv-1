@@ -1,0 +1,33 @@
+name: 🛑 Auto Stop All Streams (3:30 AM PKT)
+
+on:
+  schedule:
+    # 3:30 AM PKT (Pakistan Time) = 10:30 PM UTC
+    - cron: '30 22 * * *'
+  workflow_dispatch: # Testing ke liye manual button bhi rakha hai
+
+jobs:
+  cancel-all-streams:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Cancel all running main.yml workflows
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Finding all running streams..."
+          
+          # Ye command saare chalte hue 'main.yml' actions ki IDs nikalegi
+          RUN_IDS=$(gh run list --workflow "main.yml" --status in_progress --json databaseId -q '.[].databaseId')
+
+          if [ -z "$RUN_IDS" ]; then
+            echo "[*] Koi stream nahi chal rahi. Chill scene hai!"
+          else
+            for ID in $RUN_IDS; do
+              echo "[!] Cancelling Workflow ID: $ID"
+              gh run cancel $ID
+            done
+            echo "[+] Saari streams successfully 3:30 AM par band kar di gayi hain!"
+          fi
