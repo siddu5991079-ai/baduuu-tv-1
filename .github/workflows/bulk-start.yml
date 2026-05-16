@@ -1,0 +1,36 @@
+name: 🚀 Bulk Start All Streams
+
+on:
+  workflow_dispatch: # Ye button dabane par chalega
+
+jobs:
+  start-multiple-streams:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Start Channel 1
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Yahan apni Channel 1 ki URL dalein
+          gh workflow run main.yml -f target_url="https://dadocric.st/player.php?id=starsp3&v=m" -f okru_stream_channel="1" -f stream_quality="110KBps (Balanced 480p)" -f server_selection="None"
+          sleep 10 # 10 seconds ka gap taake GitHub limit restrict na kare
+
+      - name: Start Channel 2
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Yahan apni Channel 2 ki URL dalein
+          gh workflow run main.yml -f target_url="https://dadocric.st/player.php?id=TENSP&v=m" -f okru_stream_channel="2" -f stream_quality="110KBps (Balanced 480p)" -f server_selection="None"
+          sleep 10
+
+      - name: Start Channel 3
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Yahan apni Channel 3 ki URL dalein
+          gh workflow run main.yml -f target_url="https://dadocric.st/player.php?id=WILLOW&v=m" -f okru_stream_channel="3" -f stream_quality="50KBps (Data Saver 360p)" -f server_selection="None"
+          
+      # Aap is block ko copy-paste karke Channel 4, 5, etc. bhi add kar sakte hain.
