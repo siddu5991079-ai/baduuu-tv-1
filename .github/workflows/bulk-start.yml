@@ -1,36 +1,80 @@
-name: 🚀 Bulk Start All Streams
+name: 🚀 Bulk Start & Auto-Delete Streams
 
 on:
-  workflow_dispatch: # Ye button dabane par chalega
+  workflow_dispatch: # Manual button dabane par chalega
+
+permissions:
+  contents: write # CSV file ko wapas update karne ke liye permission
+  actions: write  # main.yml ko trigger karne ke liye permission
 
 jobs:
-  start-multiple-streams:
+  process-csv:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
 
-      - name: Start Channel 1
+      - name: Process CSV, Trigger Streams & Delete
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Yahan apni Channel 1 ki URL dalein
-          gh workflow run main.yml -f target_url="https://dadocric.st/player.php?id=starsp3&v=m" -f okru_stream_channel="1" -f stream_quality="110KBps (Balanced 480p)" -f server_selection="None"
-          sleep 10 # 10 seconds ka gap taake GitHub limit restrict na kare
-
-      - name: Start Channel 2
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          # Yahan apni Channel 2 ki URL dalein
-          gh workflow run main.yml -f target_url="https://dadocric.st/player.php?id=TENSP&v=m" -f okru_stream_channel="2" -f stream_quality="110KBps (Balanced 480p)" -f server_selection="None"
-          sleep 10
-
-      - name: Start Channel 3
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          # Yahan apni Channel 3 ki URL dalein
-          gh workflow run main.yml -f target_url="https://dadocric.st/player.php?id=WILLOW&v=m" -f okru_stream_channel="3" -f stream_quality="50KBps (Data Saver 360p)" -f server_selection="None"
+          CSV_FILE="streams.csv"
           
-      # Aap is block ko copy-paste karke Channel 4, 5, etc. bhi add kar sakte hain.
+          # Check karte hain file exist karti hai ya nahi
+          if [ ! -f "$CSV_FILE" ]; then
+            echo "[-] $CSV_FILE nahi mili!"
+            exit 0
+          fi
+          
+          # Total lines count karte hain
+          LINES=$(wc -l < "$CSV_FILE")
+          
+          if [ "$LINES" -le 1 ]; then
+            echo "[-] CSV khali hai (ya sirf header hai). Koi stream run nahi hogi."
+            exit 0
+          fi
+          
+          # Ek temporary file banate hain jisme sirf Header copy karenge
+          head -n 1 "$CSV_FILE" > temp.csv
+          
+          # Line 2 se read karna shuru karte hain
+          tail -n +2 "$CSV_FILE" | while IFS=',' read -r URL CHANNEL QUALITY SERVER; do
+            # Agar line khali hai toh skip karo
+            if [ -z "$URL" ]; then continue; fi
+            
+            # Windows/Mac ke carriage returns (\r) ko clean karna taake errors na aayein
+            URL=$(echo "$URL" | tr -d '\r')
+            CHANNEL=$(echo "$CHANNEL" | tr -d '\r')
+            QUALITY=$(echo "$QUALITY" | tr -d '\r')
+            SERVER=$(echo "$SERVER" | tr -d '\r')
+
+            echo "[*] Starting Channel: $CHANNEL for URL: $URL"
+            
+            # main.yml ko trigger karte hain variables ke sath
+            gh workflow run main.yml -f target_url="$URL" -f okru_stream_channel="$CHANNEL" -f stream_quality="$QUALITY" -f server_selection="$SERVER"
+            
+            if [ $? -eq 0 ]; then
+              echo "[+] Successfully triggered $CHANNEL! (Ye CSV se delete ho jayega)"
+              sleep 5 # GitHub API ko overload hone se bachane ke liye 5 sec ka delay
+            else
+              echo "[-] Failed to trigger $CHANNEL. (Ye error ki wajah se CSV mein bacha rahega)"
+              # Agar fail ho gaya, toh line ko wapas bacha lo taake next time run ho sake
+              echo "$URL,$CHANNEL,$QUALITY,$SERVER" >> temp.csv
+            fi
+          done
+          
+          # Purani CSV ko nayi (deleted wali) file se replace kar dein
+          mv temp.csv "$CSV_FILE"
+
+      - name: Commit and Push Updated CSV
+        run: |
+          # Git configuration setup karte hain bot ke naam se
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Updated file add karte hain
+          git add streams.csv
+          
+          # Agar file mein changes hain toh commit aur push karo
+          git diff --staged --quiet || (git commit -m "Bot: Auto-removed triggered streams from CSV" && git push)
+          echo "[*] CSV successfully update ho gayi hai!"
